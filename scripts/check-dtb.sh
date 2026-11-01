@@ -20,6 +20,12 @@ if [ ! -d "$outdir" ]; then
     exit 2
 fi
 
+dtb=$(find "$outdir" -name omap3-echo.dtb -type f -print -quit 2>/dev/null || true)
+if [ -z "$dtb" ]; then
+    echo "error: omap3-echo.dtb not found under $outdir" >&2
+    exit 1
+fi
+
 if [ -x "$outdir/host/bin/dtc" ]; then
     dtc=$outdir/host/bin/dtc
 elif command -v dtc >/dev/null 2>&1; then
@@ -27,12 +33,6 @@ elif command -v dtc >/dev/null 2>&1; then
 else
     echo "error: no dtc found (looked for $outdir/host/bin/dtc and dtc in PATH)" >&2
     exit 2
-fi
-
-dtb=$(find "$outdir" -name omap3-echo.dtb -type f -print -quit 2>/dev/null || true)
-if [ -z "$dtb" ]; then
-    echo "error: omap3-echo.dtb not found under $outdir" >&2
-    exit 1
 fi
 
 if ! dts=$("$dtc" -I dtb -O dts "$dtb" 2>/dev/null); then

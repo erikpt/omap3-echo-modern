@@ -46,10 +46,18 @@ class CheckDtbTests(unittest.TestCase):
         self.assertIn("not a directory", r.stderr)
 
     def test_dir_without_dtb_fails_with_clear_message(self):
+        # Must not need dtc: run with a PATH that contains no dtc.
         os.makedirs(os.path.join(self.tmp, "build"))
-        r = run(self.tmp)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("omap3-echo.dtb not found", r.stderr)
+        bindir = os.path.join(self.tmp, "bin")
+        os.makedirs(bindir)
+        for tool_name in ("find", "dirname"):
+            os.symlink(shutil.which(tool_name), os.path.join(bindir, tool_name))
+        env = {"PATH": bindir}
+        r = subprocess.run([shutil.which("bash"), CHECK_DTB, self.tmp], capture_output=True,
+                           text=True, cwd=tempfile.gettempdir(), env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stderr.strip(),
+                         "error: omap3-echo.dtb not found under %s" % self.tmp)
 
     @unittest.skipUnless(shutil.which("dtc"), "dtc not installed")
     def test_good_dtb_passes_and_bad_dtbs_fail(self):

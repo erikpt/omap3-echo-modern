@@ -64,6 +64,19 @@ class CarveTests(unittest.TestCase):
             carve.carve(self.info.path, 0, 512, link, force=True)
         self.assertEqual(_read(self.info.path), before)
 
+    def test_part_path_equal_src_refused(self):
+        src = os.path.join(self.dir, "x.part")
+        with open(src, "wb") as f:
+            f.write(b"dump-bytes" * 100)
+        before = _read(src)
+        dst = os.path.join(self.dir, "x")
+        for force in (False, True):
+            with self.assertRaises(DumpError):
+                carve.carve(src, 0, 512, dst, force=force)
+        self.assertEqual(_read(src), before)
+        self.assertEqual(os.path.getsize(src), len(before))
+        self.assertFalse(os.path.exists(dst))
+
 
 if __name__ == "__main__":
     unittest.main()

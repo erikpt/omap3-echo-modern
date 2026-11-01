@@ -12,13 +12,15 @@ def carve(src, offset, length, dst, force=False):
     `src` is opened read-only. Output goes to `dst + ".part"` and is renamed
     into place only after the full range was copied.
     """
-    if os.path.realpath(src) == os.path.realpath(dst):
-        raise DumpError("refusing to write output over the source dump: " + dst)
+    part = dst + ".part"
+    real_src = os.path.realpath(src)
+    for target in (dst, part):
+        if os.path.realpath(target) == real_src:
+            raise DumpError("refusing to write output over the source dump: " + target)
     if offset < 0 or length < 0:
         raise RangeErr("offset and length must not be negative")
     if os.path.exists(dst) and not force:
         raise OutputExists("output exists (use force to overwrite): " + dst)
-    part = dst + ".part"
     with open(src, "rb") as fin:
         size = os.fstat(fin.fileno()).st_size
         if offset + length > size:

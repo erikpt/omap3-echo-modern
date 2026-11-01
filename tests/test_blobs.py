@@ -267,6 +267,30 @@ class ExtractTests(unittest.TestCase):
             os.chdir(old)
         self.assertEqual(_read(result[0]), b"FIRMWARE")
 
+    def test_truncated_dump_raises_range_err_before_running_debugfs(self):
+        os.truncate(self.info.path, 5 * 1024 * 1024)  # inside partition 1 (1 MiB .. 9 MiB)
+        self.dump_before = _file_digest(self.info.path)
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"))
+        with mock.patch.object(_debugfs, "run") as run:
+            with self.assertRaises(RangeErr) as cm:
+                blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        run.assert_not_called()
+        self.assertEqual(cm.exception.exit_code, 2)
+        msg = str(cm.exception)
+        self.assertIn("partition 1", msg)
+        self.assertIn("0x900000", msg)  # where the partition ends
+        self.assertIn("0x500000", msg)  # dump size
+        self.assertIn("past end of dump", msg)
+        self.assertIn("truncated?", msg)
+        self.assertEqual(os.listdir(self.outdir), [])
+
+    def test_truncation_after_the_referenced_partition_is_not_an_error(self):
+        os.truncate(self.info.path, 9 * 1024 * 1024)  # partition 1 intact, the rest cut off
+        self.dump_before = _file_digest(self.info.path)
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"))
+        blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        self.assertEqual(os.listdir(self.outdir), ["fw.bin"])
+
     def _clash(self, dump_name, manifest_name, dest):
         """Dump and manifest live in the output directory under the given names."""
         dump = os.path.join(self.outdir, dump_name)

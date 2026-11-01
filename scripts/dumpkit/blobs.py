@@ -171,6 +171,13 @@ def extract_blobs(dump, manifest_path, outdir):
             raise RangeErr("partition %d (for %s) not found in %s"
                            % (entry.partition, entry.dest, dump))
 
+    dump_size = os.path.getsize(dump)
+    for number in sorted({e.partition for e in entries}):
+        part = parts[number]
+        end = part.start + part.size
+        if end > dump_size:
+            raise RangeErr("partition %d ends at 0x%x past end of dump (0x%x): truncated?"
+                           % (number, end, dump_size))
     if entries:
         _debugfs.find_debugfs()  # missing debugfs: fail before touching outdir
     outdir = os.path.abspath(outdir)

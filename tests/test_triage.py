@@ -263,6 +263,26 @@ class TriageSecretScanTests(unittest.TestCase):
             self.assertEqual(f.read(), "PREVIOUS\n")
         self.assertEqual(os.listdir(self.out), ["triage.md"])
 
+    def test_truncated_dump_marks_partitions_and_warns(self):
+        os.truncate(self.info.path, 5 * 1024 * 1024)  # inside partition 1 (1 MiB .. 9 MiB)
+        rows = section(self.report(), "## Partitions")
+        marked = [l for l in rows if l.endswith(" [past end of dump]")]
+        self.assertEqual([l.split("|")[1].strip() for l in marked], ["1", "2"])
+        self.assertIn("WARNING: dump appears truncated: 2 partition(s) end past end of file.",
+                      rows)
+
+    def test_partition_ending_exactly_at_end_of_file_is_not_flagged(self):
+        os.truncate(self.info.path, 9 * 1024 * 1024)  # partition 1 ends exactly here
+        rows = "\n".join(section(self.report(), "## Partitions"))
+        row1 = next(l for l in rows.splitlines() if l.startswith("| 1 |"))
+        self.assertNotIn("past end", row1)
+        self.assertIn("1 partition(s) end past end of file", rows)
+
+    def test_complete_dump_has_no_truncation_marks(self):
+        report = self.report()
+        self.assertNotIn("past end of dump", report)
+        self.assertNotIn("truncated", report)
+
     def test_dump_path_with_question_mark_is_refused(self):
         odd = os.path.join(self.dir, "we?ird.img")
         with open(self.info.path, "rb") as src, open(odd, "wb") as dst:

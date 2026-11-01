@@ -162,11 +162,22 @@ def _safe(text):
     return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
-def _partition_lines(parts):
+def _partition_lines(parts, size):
+    """Table rows, plus a warning line when any partition ends past the end of the file."""
     lines = ["| # | start | size (bytes) | type | name |", "|---|---|---|---|---|"]
-    rows = ["| %d | 0x%x | %d | %s | %s |" % (p.index, p.start, p.size, p.type_id, p.name)
-            for p in parts]
-    return lines + _cap(rows)
+    rows = []
+    past = 0
+    for p in parts:
+        row = "| %d | 0x%x | %d | %s | %s |" % (p.index, p.start, p.size, p.type_id, p.name)
+        if p.start + p.size > size:
+            row += " [past end of dump]"
+            past += 1
+        rows.append(row)
+    lines += _cap(rows)
+    if past:
+        lines += ["", "WARNING: dump appears truncated: %d partition(s) end past end of file."
+                  % past]
+    return lines
 
 
 def triage(dump, outdir):
@@ -189,7 +200,7 @@ def triage(dump, outdir):
            "- SHA-256: %s" % digest,
            "- Size is a multiple of 512: %s" % ("yes" if size % 512 == 0 else "no"),
            "", "## Partitions", ""]
-    out += _partition_lines(parts) if parts else ["No partition table found."]
+    out += _partition_lines(parts, size) if parts else ["No partition table found."]
 
     out += ["", "## Pattern hits", ""]
     for pat in PATTERNS:

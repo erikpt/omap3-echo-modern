@@ -122,6 +122,16 @@ class CliTests(unittest.TestCase):
         self.assertTrue(r.stderr.startswith("error: "), r.stderr)
         self.assertFalse(os.path.exists(outdir))
 
+    def test_extract_exit_code_2_on_truncated_dump(self):
+        require_tool("debugfs")
+        info = make_mbr_dump(self.tmp)
+        os.truncate(info.path, 5 * 1024 * 1024)
+        outdir = os.path.join(self.tmp, "blobs")
+        r = tool("extract-blobs", info.path, self._manifest(FW_SHA), outdir)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("truncated", r.stderr)
+        self.assertFalse(os.path.exists(outdir))
+
     def test_extract_wrapper_extracts_matching_blob(self):
         require_tool("debugfs")
         info = make_mbr_dump(self.tmp)

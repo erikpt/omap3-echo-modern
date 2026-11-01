@@ -1,5 +1,11 @@
 """Triage report for an eMMC dump: file facts, partitions, boot-related byte patterns,
-kernel command-line fragments and the names (never the contents) of secret-like files."""
+kernel command-line fragments and the names (never the contents) of secret-like files.
+
+Command-line fragments are matched tokens only: a fragment starts exactly at a
+console=/mem=/root= hit and ends at the first byte outside [A-Za-z0-9_./:,=+@%-]
+(at most 100 bytes); no byte before the hit is ever reported. The scan is raw, not
+file-aware, so a secret value placed directly after a searched key (for example
+root=<secret>) would still be printed. That residual risk is accepted."""
 import hashlib
 import os
 import subprocess
@@ -19,7 +25,8 @@ _SECRET_WORDS = ("secret", "token", "passwd", "shadow", "wpa_supplicant", ".pem"
 _CHUNK = 1024 * 1024
 _MAX_LINES = 40
 _MAX_OFFSETS = 5
-_MAX_FRAGMENT = 200
+_TOKEN_CHARS = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:,=+@%-")
+_MAX_FRAGMENT = 100
 _MAX_STORED_CMDLINE_HITS = 20000
 _MAX_WALK_ENTRIES = 200000
 _MAX_WALK_DEPTH = 32
@@ -66,40 +73,24 @@ def _printable(b):
     return 0x20 <= b <= 0x7E
 
 
-def _fragment(f, offset):
-    """Printable-ASCII run containing `offset`, trimmed to at most 200 bytes.
-
-    Returns (start, text)."""
-    lo = max(0, offset - _MAX_FRAGMENT)
-    f.seek(lo)
-    data = f.read(offset - lo + _MAX_FRAGMENT)
-    rel = offset - lo
-    start = rel
-    while start > 0 and _printable(data[start - 1]):
-        start -= 1
-    end = rel
-    while end < len(data) and _printable(data[end]):
-        end += 1
-    if end - start > _MAX_FRAGMENT:
-        start = max(start, min(rel - _MAX_FRAGMENT // 2, end - _MAX_FRAGMENT))
-        end = start + _MAX_FRAGMENT
-    return lo + start, data[start:end].decode("ascii")
-
-
 def _fragments(path, hit_offsets):
-    """Distinct command-line fragments as (offset, text), in file order."""
+    """Distinct command-line tokens as (offset, text), in file order.
+
+    A token starts exactly at the hit and extends while bytes are in _TOKEN_CHARS,
+    at most _MAX_FRAGMENT bytes. Nothing before the hit is ever included."""
     found = []
     seen = set()
-    covered_to = -1
     with open(path, "rb") as f:
         for off in hit_offsets:
-            if off < covered_to:
-                continue
-            start, text = _fragment(f, off)
-            covered_to = start + len(text)
+            f.seek(off)
+            data = f.read(_MAX_FRAGMENT)
+            end = 0
+            while end < len(data) and data[end] in _TOKEN_CHARS:
+                end += 1
+            text = data[:end].decode("ascii")
             if text not in seen:
                 seen.add(text)
-                found.append((start, text))
+                found.append((off, text))
     return found
 
 

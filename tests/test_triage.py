@@ -78,12 +78,13 @@ class TriageTests(unittest.TestCase):
         self.assertIn(str(os.path.getsize(info.path)), text)
         self.assertRegex(text, r"(?i)multiple of 512: yes")
 
-    def test_finds_cmdline_and_expands_it(self):
+    def test_finds_cmdline_tokens(self):
         require_tool("debugfs")
         info = make_mbr_dump(self.dir)
         report = self.run_triage(info.path)
         text = "\n".join(section(report, "## Command-line fragments"))
-        self.assertIn("console=ttyO2,115200n8 mem=198M root=/dev/mmcblk0p2", text)
+        for token in ("console=ttyO2,115200n8", "mem=198M", "root=/dev/mmcblk0p2"):
+            self.assertIn(": " + token, text)
 
     def test_pattern_offsets_are_hex(self):
         path = self.raw_image("p.img", [(0x40, b"mem=1"), (0x80, b"mem=2")])
@@ -122,6 +123,29 @@ class TriageTests(unittest.TestCase):
         omitted = [l for l in lines if "omitted" in l]
         self.assertEqual(len(omitted), 1)
         self.assertIn("60", omitted[0])
+
+    def test_fragment_excludes_adjacent_secret_bytes(self):
+        path = self.raw_image("adj.img", [(0x250, b"psk=hunter2 root=x\n")])
+        report = self.run_triage(path)
+        self.assertNotIn("hunter2", report)
+        self.assertIn("root=x", "\n".join(section(report, "## Command-line fragments")))
+
+    def test_fragment_excludes_adjacent_secret_bytes_in_partitioned_image(self):
+        require_tool("debugfs")
+        info = make_mbr_dump(self.dir)
+        with open(info.path, "r+b") as f:
+            f.seek(0x1200000)  # inside the unformatted second primary partition
+            f.write(b"psk=hunter2 root=x\n")
+        report = self.run_triage(info.path)
+        self.assertNotIn("hunter2", report)
+        self.assertIn("root=x", "\n".join(section(report, "## Command-line fragments")))
+
+    def test_long_token_truncated_to_100_bytes(self):
+        path = self.raw_image("long.img", [(0x40, b"root=" + b"a" * 300 + b"\n")])
+        report = self.run_triage(path)
+        frag = [l for l in section(report, "## Command-line fragments") if l.startswith("- ")]
+        self.assertEqual(len(frag), 1)
+        self.assertEqual(frag[0].split(": ", 1)[1], "root=" + "a" * 95)
 
     def test_dump_not_modified(self):
         require_tool("debugfs")

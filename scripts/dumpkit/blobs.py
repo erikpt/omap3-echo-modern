@@ -91,6 +91,10 @@ def _debugfs_dump(dump, start, entry, workdir, tmpname):
 
 def _install(staged, outdir):
     """Move staged [(path, dest)] into outdir; undo everything if any move fails."""
+    for _, dest in staged:
+        final = os.path.join(outdir, dest)
+        if os.path.isdir(final) and not os.path.islink(final):
+            raise DumpError("%s: a directory already exists at the destination" % dest)
     undo = []  # (final path, backup path or None)
     try:
         for n, (path, dest) in enumerate(staged):

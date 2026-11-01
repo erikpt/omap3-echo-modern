@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from dumpkit import blobs
 from dumpkit.errors import ChecksumMismatch, DumpError, RangeErr
@@ -161,6 +162,43 @@ class ExtractTests(unittest.TestCase):
         blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
         self.assertEqual(_read(os.path.join(self.outdir, "fw.bin")), b"FIRMWARE")
         self.assertEqual(os.listdir(self.outdir), ["fw.bin"])
+
+    def test_existing_directory_at_dest_is_refused_and_untouched(self):
+        keep = os.path.join(self.outdir, "fw.bin", "keep")
+        os.mkdir(os.path.dirname(keep))
+        with open(keep, "wb") as f:
+            f.write(b"KEEP")
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"))
+        with self.assertRaises(DumpError) as cm:
+            blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        self.assertEqual(cm.exception.exit_code, 1)
+        self.assertIn("fw.bin", str(cm.exception))
+        self.assertEqual(os.listdir(self.outdir), ["fw.bin"])
+        self.assertEqual(os.listdir(os.path.join(self.outdir, "fw.bin")), ["keep"])
+        self.assertEqual(_read(keep), b"KEEP")
+
+    def test_install_failure_restores_replaced_files(self):
+        old_a = os.path.join(self.outdir, "fw.bin")
+        old_b = os.path.join(self.outdir, "conf")
+        for path, data in ((old_a, b"OLD-A"), (old_b, b"OLD-B")):
+            with open(path, "wb") as f:
+                f.write(data)
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"),
+                            (1, "/etc/wpa_supplicant.conf", CONF_SHA, "conf"))
+        real_replace = os.replace
+
+        def failing_replace(src, dst, *args, **kwargs):
+            # Fail the final move of the second staged file (blob-1) into outdir.
+            if os.path.basename(src) == "blob-1":
+                raise OSError("injected failure")
+            return real_replace(src, dst, *args, **kwargs)
+
+        with mock.patch("dumpkit.blobs.os.replace", side_effect=failing_replace):
+            with self.assertRaises(OSError):
+                blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        self.assertEqual(sorted(os.listdir(self.outdir)), ["conf", "fw.bin"])
+        self.assertEqual(_read(old_a), b"OLD-A")
+        self.assertEqual(_read(old_b), b"OLD-B")
 
     def test_file_not_found_raises_dump_error_naming_entry(self):
         self.write_manifest((1, "/no/such/file", FW_SHA, "x"))

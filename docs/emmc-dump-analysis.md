@@ -57,6 +57,26 @@ Tools (install what is missing, none are product dependencies): `binwalk`, `file
 `e2ls`), `device-tree-compiler` (`dtc`), `u-boot-tools` (`dumpimage`, `mkimage`), `xxd`,
 `strings`, `ubi-reader` if UBI appears, `cpio`, `lz4`, `lzop`, `xz`.
 
+Dump tools in `scripts/` (Python 3 standard library only; they need `debugfs` from
+`e2fsprogs`): `scripts/dump_tool.py partitions|carve|triage|extract-blobs`, with wrappers
+`scripts/triage-dump.sh <dump> <outdir>` and `scripts/extract-blobs.sh <dump> <manifest> <outdir>`.
+Start with a triage of the working copy:
+
+```bash
+scripts/triage-dump.sh dump/work.bin dump/triage      # writes dump/triage/triage.md
+```
+
+`triage.md` holds raw-dump token fragments (command-line pieces matched in the image) and the
+dump's SHA-256. It stays under the git-ignored `dump/`. Copy into `docs/findings/` only lines
+you have reviewed and redacted.
+
+Portability notes:
+
+- `debugfs` is often not on `PATH`. On macOS the Homebrew `e2fsprogs` is keg-only: add
+  `$(brew --prefix e2fsprogs)/sbin` to `PATH`. On Debian, non-root users need `/usr/sbin` in
+  `PATH`. The tools also look in those directories themselves and say so if `debugfs` is missing.
+- `sha256sum` and `cp --reflink` are GNU-only. On macOS use `shasum -a 256` and a plain `cp`.
+
 ## 3. Procedure and what to record
 
 Each step ends with a short findings file in `docs/findings/`. Keep each under about 80 lines.
@@ -157,10 +177,17 @@ committed is a user decision; **ask before committing it**.
   strings (`ath6kl`, `fw-`, `bdata`, `otp`) for the exact filenames requested.
 - Check for per-device calibration or MAC address storage (a partition or file). Record where
   it is; **do not extract or print MAC addresses or calibration of this specific unit into git.**
-- Write `scripts/extract-blobs.sh`: reads the user's dump, copies exactly the required files
-  into `blobs/` (git-ignored), and verifies each against SHA-256 values committed in
-  `scripts/blobs.sha256`. It must fail clearly if the dump or a file is missing.
-  The script and checksums are committed; the blobs are not.
+- The wrapper `scripts/extract-blobs.sh` already exists (part of the dump tools). You write
+  `scripts/blobs.manifest`: one entry per line with four tab-separated fields: partition
+  index, path inside the filesystem, lowercase hex SHA-256, destination file name (no
+  directories). Manifest paths must be regular files: resolve symlinks first (for example
+  the ath6k firmware symlinks) and list the target file.
+- Extract with `scripts/extract-blobs.sh <dump> scripts/blobs.manifest blobs/`. It prints each
+  extracted path, fails clearly if the dump or a file is missing, and writes nothing into
+  `blobs/` unless every checksum matches. The blobs are not committed.
+- `scripts/blobs.manifest` is a tooling file committed on `firmware-develop`, not on
+  `stock-fw-analysis`. Do not commit it from the analysis branch: hand the manifest text to
+  the user or the cloud session, who commit it on `firmware-develop`.
 
 ### 3.7 Rootfs and userspace survey (`07-userspace.md`)
 
@@ -193,7 +220,7 @@ After the steps above:
 3. A short list titled **Spec changes needed**: anything that contradicts or sharpens the
    spec (for example "bootloader is signed, so milestone 1 needs approach X"). Do not edit
    the spec yourself. The user and the cloud session review that list first.
-4. `scripts/extract-blobs.sh` and `scripts/blobs.sha256` as described.
+4. `scripts/blobs.manifest` as described in 3.6 (the extraction script already exists).
 
 ## 5. Decision gates (stop and report)
 

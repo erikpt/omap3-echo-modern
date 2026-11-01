@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DUMPKIT_REQUIRE_TOOLS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y e2fsprogs shellcheck device-tree-compiler
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -t . -v
+
+  dtb:
+    # Manual only: downloads a toolchain and the kernel, takes a long time.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential cpio rsync bc unzip wget file flex bison device-tree-compiler
+      - name: Configure Buildroot
+        run: make -C buildroot BR2_EXTERNAL="$PWD/external" O="$PWD/output" echo_gen1_defconfig
+      - name: Build host dtc and configure the kernel
+        run: make -C output host-dtc linux-configure
+      - name: Build the board DTB
+        run: |
+          make -C output/build/linux-6.18.33 ARCH=arm \
+            CROSS_COMPILE="$PWD/output/host/bin/arm-buildroot-linux-musleabihf-" \
+            ti/omap/omap3-echo.dtb
+      - name: Check the DTB
+        run: scripts/check-dtb.sh output

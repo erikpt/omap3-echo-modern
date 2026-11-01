@@ -8,8 +8,8 @@ file-aware, so a secret value placed directly after a searched key (for example
 root=<secret>) would still be printed. That residual risk is accepted."""
 import hashlib
 import os
-import subprocess
 
+from . import _debugfs
 from .errors import NoPartitionTable
 from .ptable import read_partitions
 
@@ -30,7 +30,6 @@ _MAX_FRAGMENT = 100
 _MAX_STORED_CMDLINE_HITS = 20000
 _MAX_WALK_ENTRIES = 200000
 _MAX_WALK_DEPTH = 32
-_DEBUGFS_TIMEOUT = 60
 
 
 def _scan(path):
@@ -112,55 +111,49 @@ def _is_secret_like(name):
     return any(word in low for word in _SECRET_WORDS)
 
 
-def _debugfs_ls(dump, start, directory):
-    """Entries of `directory` as [(name, is_dir)], or None if debugfs cannot read it.
-
-    Only ever lists names; no command other than `ls -p` is issued."""
-    quoted = '"%s"' % directory
-    try:
-        proc = subprocess.run(
-            ["debugfs", "-R", "ls -p " + quoted, "%s?offset=%d" % (dump, start)],
-            capture_output=True, timeout=_DEBUGFS_TIMEOUT, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    entries = []
-    for line in proc.stdout.decode("utf-8", errors="surrogateescape").splitlines():
-        fields = line.split("/")  # '', inode, mode, uid, gid, name, size, ''
-        if len(fields) < 8 or fields[0] != "":
-            continue
-        name = fields[5]
-        if name in (".", ".."):
-            continue
-        try:
-            is_dir = (int(fields[2], 8) & 0o170000) == 0o040000
-        except ValueError:
-            continue
-        entries.append((name, is_dir))
-    return entries
+def _display(name):
+    """A file name made printable: control and line-break characters become escapes."""
+    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode("ascii")
+                   for c in name)
 
 
 def _secret_like_paths(dump, start):
-    """(readable, paths): readable is False when the partition is not an ext4 filesystem."""
-    root = _debugfs_ls(dump, start, "/")
+    """(readable, paths, incomplete) for the ext4 filesystem at byte `start`.
+
+    readable is False when the partition cannot be listed at all. incomplete counts the
+    directories that were skipped or could not be read (unreadable, too deep, over the
+    entry budget, or a name debugfs cannot be given), so the caller never calls a partial
+    scan clean."""
+    root = _debugfs.list_dir(dump, start, "/")
     if root is None:
-        return False, []
+        return False, [], 0
     hits = []
-    budget = [_MAX_WALK_ENTRIES]
+    incomplete = 0
+    budget = _MAX_WALK_ENTRIES
     stack = [("", root, 0)]
-    while stack and budget[0] > 0:
+    while stack:
         parent, entries, depth = stack.pop()
-        for name, is_dir in entries:
-            budget[0] -= 1
+        for i, (name, is_dir) in enumerate(entries):
+            if budget <= 0:
+                # Unvisited entries here, and every directory still queued, are skipped.
+                incomplete += 1 + len(stack)
+                stack = []
+                break
+            budget -= 1
             path = parent + "/" + name
             if _is_secret_like(name):
                 hits.append(path)
-            if is_dir and depth < _MAX_WALK_DEPTH and '"' not in name and "\n" not in name:
-                sub = _debugfs_ls(dump, start, path)
-                if sub:
-                    stack.append((path, sub, depth + 1))
-    return True, sorted(hits)
+            if not is_dir:
+                continue
+            if depth >= _MAX_WALK_DEPTH or '"' in name or "\n" in name:
+                incomplete += 1
+                continue
+            sub = _debugfs.list_dir(dump, start, path)
+            if sub is None:
+                incomplete += 1
+            elif sub:
+                stack.append((path, sub, depth + 1))
+    return True, sorted(hits), incomplete
 
 
 def _safe(text):
@@ -177,11 +170,14 @@ def _partition_lines(parts):
 
 def triage(dump, outdir):
     """Write `outdir/triage.md` for the dump at `dump` and return its path."""
-    size, digest, counts, first, cmdline_hits = _scan(dump)
+    _debugfs.image_arg(dump, 0)  # refuse a dump path debugfs would misread, before any work
     try:
         parts = read_partitions(dump)
     except NoPartitionTable:
         parts = []
+    if parts:
+        _debugfs.find_debugfs()  # fail now, not with a report that looks like a clean scan
+    size, digest, counts, first, cmdline_hits = _scan(dump)
 
     out = ["# Dump triage", "", "## File", "",
            "- Path: %s" % dump,
@@ -212,14 +208,32 @@ def triage(dump, outdir):
         out.append("No partitions to scan.")
     else:
         lines = []
+        readable_count = 0
+        hit_count = 0
+        incomplete = 0
         for p in parts:
-            readable, paths = _secret_like_paths(dump, p.start)
+            readable, paths, skipped = _secret_like_paths(dump, p.start)
             if not readable:
                 lines.append("- partition %d: not ext4/unreadable" % p.index)
-            lines += ["- partition %d: %s" % (p.index, path) for path in paths]
-        if not any(": /" in l for l in lines):
-            lines.append("No secret-like file names found in readable ext4 partitions.")
+                continue
+            readable_count += 1
+            incomplete += skipped
+            hit_count += len(paths)
+            lines += ["- partition %d: %s" % (p.index, _display(path)) for path in paths]
+        has_hits = hit_count > 0
         out += _cap(lines)
+        # These verdict lines are added after the cap so a long list can never hide them.
+        if incomplete:
+            out.append("scan incomplete: %d director%s skipped or unreadable"
+                       % (incomplete, "y" if incomplete == 1 else "ies"))
+        if readable_count == 0:
+            out.append("Scan not possible: no ext4 partition was readable.")
+        elif incomplete:
+            if not has_hits:
+                out.append("The scan was incomplete, so having no hits does not mean the "
+                           "partitions are clean.")
+        elif not has_hits:
+            out.append("No secret-like file names found in readable ext4 partitions.")
 
     os.makedirs(outdir, exist_ok=True)
     report = os.path.join(outdir, "triage.md")

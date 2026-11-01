@@ -32,6 +32,21 @@ def require_tool(name):
         raise unittest.SkipTest("required tool not found: " + name)
 
 
+def set_partition1_files(info, files):
+    """Replace the ext4 filesystem in partition 1 of an MBR fixture with one holding `files`."""
+    start, size = info.partitions[0]
+    img = info.path + ".p1.tmp"
+    try:
+        _build_ext4(img, size, files)
+        with open(img, "rb") as src, open(info.path, "r+b") as dst:
+            dst.seek(start)
+            shutil.copyfileobj(src, dst)
+    finally:
+        if os.path.exists(img):
+            os.unlink(img)
+    info.files = dict(files)
+
+
 def _build_ext4(img_path, size, files):
     with tempfile.TemporaryDirectory() as staging:
         for path, content in files.items():

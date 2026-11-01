@@ -8,10 +8,10 @@ import hashlib
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass
 
+from . import _debugfs
 from .errors import ChecksumMismatch, DumpError, RangeErr
 from .ptable import read_partitions
 
@@ -74,17 +74,14 @@ def _debugfs_dump(dump, start, entry, workdir, tmpname):
     """Copy entry.fs_path out of the filesystem into workdir/tmpname; return that path."""
     where = "%s in partition %d" % (entry.fs_path, entry.partition)
     try:
-        proc = subprocess.run(
-            ["debugfs", "-R", 'dump "%s" %s' % (entry.fs_path, tmpname),
-             "%s?offset=%d" % (dump, start)],
-            cwd=workdir, capture_output=True, timeout=_DEBUGFS_TIMEOUT, check=False)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        raise DumpError("debugfs could not run for %s: %s" % (where, e))
+        rc, _out, err = _debugfs.run('dump "%s" %s' % (entry.fs_path, tmpname), dump, start,
+                                     cwd=workdir, timeout=_DEBUGFS_TIMEOUT)
+    except _debugfs.DebugfsRunError as e:
+        raise DumpError("%s for %s" % (e, where))
     out = os.path.join(workdir, tmpname)
-    errors = [l for l in proc.stderr.decode("utf-8", errors="replace").splitlines()
-              if l.strip() and not l.startswith("debugfs ")]
-    if (proc.returncode != 0 or errors or os.path.islink(out) or not os.path.isfile(out)):
-        detail = errors[0].strip() if errors else "exit status %d" % proc.returncode
+    errors = _debugfs.error_lines(err)
+    if (rc != 0 or errors or os.path.islink(out) or not os.path.isfile(out)):
+        detail = errors[0].strip() if errors else "exit status %d" % rc
         raise DumpError("cannot extract %s: %s" % (where, detail))
     return out
 
@@ -136,8 +133,7 @@ def extract_blobs(dump, manifest_path, outdir):
     place once all entries pass. On any failure outdir holds what it held before (or does
     not exist, if it did not exist before)."""
     dump = os.path.abspath(dump)  # also keeps a leading '-' from reading as an option
-    if "?" in dump:
-        raise DumpError("dump path contains '?', which debugfs reads as offset syntax: " + dump)
+    _debugfs.image_arg(dump, 0)  # refuses a '?' in the path
     try:
         with open(manifest_path, encoding="utf-8") as f:
             entries = parse_manifest(f.read())
@@ -155,6 +151,8 @@ def extract_blobs(dump, manifest_path, outdir):
             raise RangeErr("partition %d (for %s) not found in %s"
                            % (entry.partition, entry.dest, dump))
 
+    if entries:
+        _debugfs.find_debugfs()  # missing debugfs: fail before touching outdir
     outdir = os.path.abspath(outdir)
     created = _missing_dirs(outdir)
     os.makedirs(outdir, exist_ok=True)

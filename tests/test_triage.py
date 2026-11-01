@@ -1,11 +1,16 @@
 import hashlib
+import io
 import os
 import re
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from unittest import mock
 
-from dumpkit import triage
-from tests.fixtures import make_gpt_dump, make_mbr_dump, require_tool
+import dump_tool
+from dumpkit import _debugfs, triage
+from dumpkit.errors import DumpError
+from tests.fixtures import make_gpt_dump, make_mbr_dump, require_tool, set_partition1_files
 
 SECTIONS = [
     "# Dump triage",
@@ -182,6 +187,114 @@ class TriageTests(unittest.TestCase):
         report = self.run_triage(path)
         self.assertEqual(section(report, "## Partitions"), ["No partition table found."])
         self.assertIn("No partitions to scan.", section(report, "## Secret-like files"))
+
+
+CLEAN = "No secret-like file names found"
+
+
+class TriageSecretScanTests(unittest.TestCase):
+    def setUp(self):
+        require_tool("debugfs")
+        require_tool("mke2fs")
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = self._tmp.name
+        self.out = os.path.join(self.dir, "out")
+        self.info = make_mbr_dump(self.dir)
+
+    def report(self, path=None):
+        triage.triage(path or self.info.path, self.out)
+        with open(os.path.join(self.out, "triage.md"), encoding="utf-8") as f:
+            return f.read()
+
+    def secret_section(self, report):
+        return "\n".join(section(report, "## Secret-like files"))
+
+    def test_missing_debugfs_raises_dump_error_not_a_report(self):
+        with tempfile.TemporaryDirectory() as empty, \
+                mock.patch.dict(os.environ, {"PATH": empty}), \
+                mock.patch.object(_debugfs, "_EXTRA_DIRS", ()):
+            with self.assertRaises(DumpError) as cm:
+                triage.triage(self.info.path, self.out)
+            self.assertIn("install e2fsprogs", str(cm.exception))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = dump_tool.main(["triage", self.info.path, self.out])
+            self.assertEqual(code, 1)
+            self.assertIn("install e2fsprogs", err.getvalue())
+        self.assertFalse(os.path.exists(os.path.join(self.out, "triage.md")))
+
+    def test_dump_path_with_question_mark_is_refused(self):
+        odd = os.path.join(self.dir, "we?ird.img")
+        with open(self.info.path, "rb") as src, open(odd, "wb") as dst:
+            dst.write(src.read())
+        with self.assertRaises(DumpError) as cm:
+            triage.triage(odd, self.out)
+        self.assertIn("?", str(cm.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "triage.md")))
+
+    def test_all_partitions_unreadable_is_not_reported_clean(self):
+        info = make_gpt_dump(self.dir)
+        text = self.secret_section(self.report(info.path))
+        self.assertNotIn(CLEAN, text)
+        self.assertIn("no ext4 partition was readable", text)
+
+    def test_clean_wording_only_when_scan_was_complete(self):
+        set_partition1_files(self.info, {"/etc/motd": b"hi"})
+        text = self.secret_section(self.report())
+        self.assertIn(CLEAN, text)
+        self.assertNotIn("scan incomplete", text)
+
+    def test_directory_with_quote_in_name_counts_as_incomplete(self):
+        set_partition1_files(self.info, {'/q"d/x_secret': b"s", "/ok/f": b"1"})
+        text = self.secret_section(self.report())
+        self.assertIn("scan incomplete: 1 director", text)
+        self.assertNotIn(CLEAN, text)
+
+    def test_unreadable_subdirectory_counts_as_incomplete(self):
+        set_partition1_files(self.info, {"/a/b/c_secret": b"s", "/z/f": b"1"})
+        real = _debugfs.list_dir
+
+        def flaky(dump, offset, path):
+            return None if path == "/a" else real(dump, offset, path)
+
+        with mock.patch.object(_debugfs, "list_dir", side_effect=flaky):
+            text = self.secret_section(self.report())
+        self.assertIn("scan incomplete: 1 director", text)
+        self.assertNotIn(CLEAN, text)
+
+    def test_depth_cap_counts_as_incomplete(self):
+        set_partition1_files(self.info, {"/a/b/c_secret": b"s"})
+        with mock.patch.object(triage, "_MAX_WALK_DEPTH", 0):
+            text = self.secret_section(self.report())
+        self.assertIn("scan incomplete", text)
+        self.assertNotIn(CLEAN, text)
+
+    def test_entry_budget_counts_as_incomplete(self):
+        set_partition1_files(self.info, {"/a/b/c_secret": b"s", "/d/e": b"1"})
+        with mock.patch.object(triage, "_MAX_WALK_ENTRIES", 1):
+            text = self.secret_section(self.report())
+        self.assertIn("scan incomplete", text)
+        self.assertNotIn(CLEAN, text)
+
+    def test_incomplete_line_survives_the_40_line_cap(self):
+        files = {"/d/f%02d_secret" % i: b"s" for i in range(50)}
+        files['/q"d/x'] = b"1"
+        set_partition1_files(self.info, files)
+        text = self.secret_section(self.report())
+        self.assertIn("omitted", text)
+        self.assertIn("scan incomplete: 1 director", text)
+
+    def test_names_with_line_break_characters_are_found(self):
+        files = {"/a\x1cb_secret": b"x", "/c\x0bd_secret": b"x",
+                 "/e\u2028f_secret": b"x", "/g\nh_secret": b"x"}
+        set_partition1_files(self.info, files)
+        text = self.secret_section(self.report())
+        self.assertNotIn(CLEAN, text)
+        # Names are shown with control and line-break characters escaped.
+        for frag in ("a\\x1cb_secret", "c\\x0bd_secret", "e\\u2028f_secret", "g\\nh_secret"):
+            self.assertIn(frag, text)
+        self.assertEqual(sum("_secret" in l for l in text.splitlines()), 4)
 
 
 if __name__ == "__main__":

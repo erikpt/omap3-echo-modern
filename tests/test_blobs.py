@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from dumpkit import blobs
+from dumpkit import _debugfs, blobs
 from dumpkit.errors import ChecksumMismatch, DumpError, RangeErr
 from tests.fixtures import _build_ext4, make_mbr_dump, require_tool
 
@@ -266,6 +266,23 @@ class ExtractTests(unittest.TestCase):
         finally:
             os.chdir(old)
         self.assertEqual(_read(result[0]), b"FIRMWARE")
+
+    def test_missing_debugfs_is_a_clear_error_and_leaves_outdir_empty(self):
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"))
+        with tempfile.TemporaryDirectory() as empty, \
+                mock.patch.dict(os.environ, {"PATH": empty}), \
+                mock.patch.object(_debugfs, "_EXTRA_DIRS", ()):
+            with self.assertRaises(DumpError) as cm:
+                blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        self.assertEqual(cm.exception.exit_code, 1)
+        self.assertIn("install e2fsprogs", str(cm.exception))
+        self.assertEqual(os.listdir(self.outdir), [])
+
+    def test_uses_the_shared_debugfs_helper(self):
+        self.write_manifest((1, FW, FW_SHA, "fw.bin"))
+        with mock.patch.object(_debugfs, "run", wraps=_debugfs.run) as run:
+            blobs.extract_blobs(self.info.path, self.manifest, self.outdir)
+        self.assertEqual(run.call_count, 1)
 
     def test_staging_directory_is_removed(self):
         self.write_manifest((1, FW, FW_SHA, "fw.bin"))

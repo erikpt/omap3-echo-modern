@@ -96,6 +96,46 @@ class CliTests(unittest.TestCase):
             self.assertEqual(f.read(), b"keep")
         self.assertEqual(tool("carve", src, "0", "10", out, "--force").returncode, 0)
 
+    def assert_usage_error(self, r):
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertTrue(r.stderr.startswith("usage: "), r.stderr)
+        self.assertIn("error: ", r.stderr)
+        self.assertEqual(r.stdout, "")
+
+    def test_bad_integer_argument_exits_1_with_usage(self):
+        r = tool("carve", "src.bin", "zz", "10", "out.bin")
+        self.assert_usage_error(r)
+        self.assertIn("not an integer", r.stderr)
+
+    def test_unknown_subcommand_exits_1_with_usage(self):
+        self.assert_usage_error(tool("frobnicate"))
+
+    def test_missing_subcommand_exits_1_with_usage(self):
+        self.assert_usage_error(tool())
+
+    def test_wrong_arguments_exit_1_with_usage(self):
+        self.assert_usage_error(tool("partitions"))
+        self.assert_usage_error(tool("triage", "only-one-arg"))
+
+    def test_help_still_exits_0(self):
+        r = tool("-h")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("usage: ", r.stdout)
+        r = tool("carve", "-h")
+        self.assertEqual(r.returncode, 0)
+
+    def test_main_returns_through_system_exit_1_on_usage_error(self):
+        err = io.StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as cm:
+            dump_tool.main(["carve", "a", "zz", "1", "o"])
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_isolated_mode_can_import_dumpkit(self):
+        info = make_mbr_dump(self.tmp, with_ext4=False)
+        r = run([sys.executable, "-I", TOOL, "partitions", info.path], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(r.stdout.splitlines()), 3)
+
     def test_triage_wrapper_writes_report(self):
         require_tool("debugfs")
         info = make_mbr_dump(self.tmp)

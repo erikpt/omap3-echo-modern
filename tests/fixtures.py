@@ -27,9 +27,15 @@ class FixtureInfo:
 
 
 def require_tool(name):
-    """Skip the calling test, naming the tool, if it is not installed."""
+    """Skip the calling test, naming the tool, if it is not installed.
+
+    With DUMPKIT_REQUIRE_TOOLS=1 (set in CI) a missing tool fails the test instead, so a
+    broken runner image cannot turn the suite green by skipping."""
     if shutil.which(name) is None:
-        raise unittest.SkipTest("required tool not found: " + name)
+        message = "required tool not found: " + name
+        if os.environ.get("DUMPKIT_REQUIRE_TOOLS") == "1":
+            raise AssertionError(message + " (DUMPKIT_REQUIRE_TOOLS=1)")
+        raise unittest.SkipTest(message)
 
 
 def set_partition1_files(info, files):

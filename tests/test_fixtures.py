@@ -3,7 +3,10 @@ import subprocess
 import tempfile
 import unittest
 
+from unittest import mock
+
 from dumpkit import errors
+from tests import fixtures
 from tests.fixtures import make_gpt_dump, make_mbr_dump, require_tool
 
 
@@ -18,6 +21,45 @@ class ErrorClassesTest(unittest.TestCase):
                     errors.ChecksumMismatch, errors.OutputExists):
             self.assertTrue(issubclass(cls, errors.DumpError))
         self.assertTrue(issubclass(errors.DumpError, Exception))
+
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FAKE_TOOL = "no-such-tool-for-dumpkit-tests"
+
+
+class RequireToolTests(unittest.TestCase):
+    def test_missing_tool_skips_by_default(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("DUMPKIT_REQUIRE_TOOLS", None)
+            with self.assertRaises(unittest.SkipTest) as cm:
+                require_tool(FAKE_TOOL)
+        self.assertIn(FAKE_TOOL, str(cm.exception))
+
+    def test_missing_tool_fails_instead_of_skipping_when_required(self):
+        with mock.patch.dict(os.environ, {"DUMPKIT_REQUIRE_TOOLS": "1"}):
+            with self.assertRaises(AssertionError) as cm:
+                require_tool(FAKE_TOOL)
+        self.assertNotIsInstance(cm.exception, unittest.SkipTest)
+        self.assertIn(FAKE_TOOL, str(cm.exception))
+
+    def test_present_tool_passes_in_both_modes(self):
+        for value in (None, "1"):
+            with self.subTest(value=value), mock.patch.dict(os.environ):
+                os.environ.pop("DUMPKIT_REQUIRE_TOOLS", None)
+                if value:
+                    os.environ["DUMPKIT_REQUIRE_TOOLS"] = value
+                require_tool("sh")
+
+    def test_only_the_value_1_turns_the_guard_on(self):
+        with mock.patch.dict(os.environ, {"DUMPKIT_REQUIRE_TOOLS": "0"}):
+            with self.assertRaises(unittest.SkipTest):
+                require_tool(FAKE_TOOL)
+
+    def test_ci_test_job_sets_the_guard(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "ci.yml"), encoding="utf-8") as f:
+            text = f.read()
+        test_job = text.split("\n  test:\n")[1].split("\n  dtb:\n")[0]
+        self.assertIn('DUMPKIT_REQUIRE_TOOLS: "1"', test_job)
 
 
 class FixturesTest(unittest.TestCase):

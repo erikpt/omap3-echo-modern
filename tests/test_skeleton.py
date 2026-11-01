@@ -1,9 +1,11 @@
 import configparser
+import contextlib
 import fnmatch
 import os
 import re
 import subprocess
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXTERNAL = os.path.join(ROOT, "external")
@@ -15,6 +17,25 @@ README = os.path.join(BOARD, "README.md")
 def read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
+
+
+def _readme_tag():
+    m = re.search(r"^Buildroot tag: `?(\d{4}\.\d{2}(?:\.\d+)?)`?\s*$", read(README), re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def _submodule_checked_out():
+    # CI may not check out submodules.
+    return os.path.exists(os.path.join(ROOT, "buildroot", ".git"))
+
+
+def _submodule_tag():
+    """(tag, stderr) of the checked-out Buildroot submodule; tag is None if git cannot
+    name one (shallow or tagless checkout)."""
+    r = subprocess.run(
+        ["git", "-C", os.path.join(ROOT, "buildroot"), "describe", "--tags", "--exact-match"],
+        capture_output=True, text=True)
+    return (r.stdout.strip() if r.returncode == 0 else None), r.stderr
 
 
 def defconfig_lines():
@@ -52,6 +73,43 @@ class SkeletonTests(unittest.TestCase):
             self.assertTrue(ref.startswith(prefix), ref)
             self.assertTrue(os.path.isfile(os.path.join(EXTERNAL, ref[len(prefix):])), ref)
 
+    def _run_pin_test_with(self, tag_result, readme_text=None):
+        """Run test_gitmodules_pins_buildroot with a checked-out submodule whose tag lookup
+        returns `tag_result`; return the unittest result."""
+        result = unittest.TestResult()
+        case = SkeletonTests("test_gitmodules_pins_buildroot")
+        patches = [mock.patch("tests.test_skeleton._submodule_checked_out", return_value=True),
+                   mock.patch("tests.test_skeleton._submodule_tag", return_value=tag_result)]
+        if readme_text is not None:
+            real_read = read
+            patches.append(mock.patch(
+                "tests.test_skeleton.read",
+                side_effect=lambda p: readme_text if p == README else real_read(p)))
+        with contextlib.ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            case.run(result)
+        return result
+
+    def test_tagless_submodule_skips_only_the_tag_comparison(self):
+        result = self._run_pin_test_with((None, "fatal: No names found"))
+        self.assertEqual(result.failures + result.errors, [])
+        self.assertEqual(len(result.skipped), 1)
+        self.assertIn("tag", result.skipped[0][1])
+
+    def test_matching_tag_does_not_skip(self):
+        result = self._run_pin_test_with((_readme_tag(), ""))
+        self.assertEqual(result.failures + result.errors + result.skipped, [])
+
+    def test_wrong_tag_still_fails(self):
+        result = self._run_pin_test_with(("1999.01", ""))
+        self.assertEqual(len(result.failures), 1)
+
+    def test_tagless_submodule_still_checks_readme_unconditionally(self):
+        result = self._run_pin_test_with((None, "fatal"), readme_text="no tag line here\n")
+        self.assertEqual(len(result.failures), 1)
+        self.assertIn("README records no", result.failures[0][1])
+
     def test_gitmodules_pins_buildroot(self):
         cfg = configparser.ConfigParser()
         cfg.read(os.path.join(ROOT, ".gitmodules"))
@@ -61,14 +119,16 @@ class SkeletonTests(unittest.TestCase):
                       read(README), re.MULTILINE)
         self.assertIsNotNone(m, "README records no 'Buildroot tag: <tag>' line")
         tag = m.group(1)
-        # Only compare with the checked-out submodule when it is present (CI
-        # may not check out submodules).
-        if os.path.exists(os.path.join(ROOT, "buildroot", ".git")):
-            r = subprocess.run(
-                ["git", "-C", os.path.join(ROOT, "buildroot"), "describe", "--tags",
-                 "--exact-match"], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout.strip(), tag)
+        # Only compare with the checked-out submodule when it is present.
+        if _submodule_checked_out():
+            found, why = _submodule_tag()
+            if found is None:
+                # A shallow or tagless checkout cannot name its tag; skip just this check.
+                with self.subTest("submodule tag"):
+                    self.skipTest("buildroot submodule has no resolvable tag "
+                                  "(shallow or tagless checkout): " + why.strip())
+            else:
+                self.assertEqual(found, tag)
 
     def test_no_binary_artifacts_tracked(self):
         r = subprocess.run(["git", "-C", ROOT, "ls-files"], capture_output=True, text=True)

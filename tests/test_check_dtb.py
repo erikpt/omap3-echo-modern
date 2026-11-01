@@ -4,6 +4,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tests.fixtures import require_tool
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK_DTB = os.path.join(ROOT, "scripts", "check-dtb.sh")
 
@@ -59,8 +61,8 @@ class CheckDtbTests(unittest.TestCase):
         self.assertEqual(r.stderr.strip(),
                          "error: omap3-echo.dtb not found under %s" % self.tmp)
 
-    @unittest.skipUnless(shutil.which("dtc"), "dtc not installed")
     def test_good_dtb_passes_and_bad_dtbs_fail(self):
+        require_tool("dtc")
         def build(name, dts):
             d = os.path.join(self.tmp, name)
             os.makedirs(d)

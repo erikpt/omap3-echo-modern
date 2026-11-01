@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DUMPKIT_REQUIRE_TOOLS: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install tools

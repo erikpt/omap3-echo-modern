@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Command-line entry point for the dumpkit tools. Never modifies the dump."""
 import argparse
+import os
 import sys
+
+# Python's -I (isolated) mode leaves the script's own directory off sys.path; add it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dumpkit.blobs import extract_blobs
 from dumpkit.carve import carve
@@ -38,8 +42,17 @@ def _int(text):
         raise argparse.ArgumentTypeError("not an integer (decimal or 0x hex): " + text)
 
 
+class _Parser(argparse.ArgumentParser):
+    """Usage errors exit 1 (argparse's default 2 is this tool's 'range' error)."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print("error: %s" % message, file=sys.stderr)
+        sys.exit(1)
+
+
 def _parser():
-    ap = argparse.ArgumentParser(prog="dump_tool.py", description=__doc__)
+    ap = _Parser(prog="dump_tool.py", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("partitions", help="print partitions as TSV: index start size type_id name")

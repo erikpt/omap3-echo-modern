@@ -11,6 +11,8 @@ player. Wake-word placement is undecided until microphone bring-up works.
   verified or unverified. Keep that discipline.
 - `docs/emmc-dump-analysis.md`: the runbook for analysing the eMMC dump. If you are asked
   to analyse a dump, follow it.
+- `scripts/`: dump tools (`dumpkit` package, `dump_tool.py`); run them via the wrappers
+  `triage-dump.sh` and `extract-blobs.sh`. Tests: `python3 -m unittest discover -s tests -t . -v`.
 
 ## Rules
 

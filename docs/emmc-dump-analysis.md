@@ -57,6 +57,10 @@ Tools (install what is missing, none are product dependencies): `binwalk`, `file
 `e2ls`), `device-tree-compiler` (`dtc`), `u-boot-tools` (`dumpimage`, `mkimage`), `xxd`,
 `strings`, `ubi-reader` if UBI appears, `cpio`, `lz4`, `lzop`, `xz`.
 
+Dump tools in `scripts/` (Python 3 standard library only; they need `debugfs` from
+`e2fsprogs`): `scripts/dump_tool.py partitions|carve|triage|extract-blobs`, with wrappers
+`scripts/triage-dump.sh <dump> <outdir>` and `scripts/extract-blobs.sh <dump> <manifest> <outdir>`.
+
 ## 3. Procedure and what to record
 
 Each step ends with a short findings file in `docs/findings/`. Keep each under about 80 lines.
@@ -164,6 +168,7 @@ committed is a user decision; **ask before committing it**.
   file name (no directories). `scripts/extract-blobs.sh` (added in a later task) reads it.
   It must fail clearly if the dump or a file is missing. The script and the manifest are
   committed; the blobs are not.
+- Blob extraction uses `scripts/extract-blobs.sh <dump> scripts/blobs.manifest blobs/`.
 
 ### 3.7 Rootfs and userspace survey (`07-userspace.md`)
 
@@ -196,7 +201,7 @@ After the steps above:
 3. A short list titled **Spec changes needed**: anything that contradicts or sharpens the
    spec (for example "bootloader is signed, so milestone 1 needs approach X"). Do not edit
    the spec yourself. The user and the cloud session review that list first.
-4. `scripts/extract-blobs.sh` and `scripts/blobs.sha256` as described.
+4. `scripts/extract-blobs.sh` and `scripts/blobs.manifest` as described.
 
 ## 5. Decision gates (stop and report)
 

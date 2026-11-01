@@ -86,8 +86,28 @@ def _debugfs_dump(dump, start, entry, workdir, tmpname):
     return out
 
 
-def _install(staged, outdir):
+def _refuse_protected(dests, outdir, dump, manifest_path):
+    """DumpError if any destination is, or links to, the dump or the manifest.
+
+    Only an existing file can be the same file; a destination that does not exist yet
+    cannot clobber anything."""
+    for dest in dests:
+        final = os.path.join(outdir, dest)
+        if not os.path.exists(final):
+            continue
+        for what, protected in (("dump", dump), ("manifest", manifest_path)):
+            try:
+                same = os.path.samefile(final, protected)
+            except OSError:
+                same = False
+            if same:
+                raise DumpError("%s: destination is the %s itself; refusing to replace it"
+                                % (dest, what))
+
+
+def _install(staged, outdir, dump, manifest_path):
     """Move staged [(path, dest)] into outdir; undo everything if any move fails."""
+    _refuse_protected([dest for _, dest in staged], outdir, dump, manifest_path)
     for _, dest in staged:
         final = os.path.join(outdir, dest)
         if os.path.isdir(final) and not os.path.islink(final):
@@ -154,6 +174,7 @@ def extract_blobs(dump, manifest_path, outdir):
     if entries:
         _debugfs.find_debugfs()  # missing debugfs: fail before touching outdir
     outdir = os.path.abspath(outdir)
+    _refuse_protected([e.dest for e in entries], outdir, dump, manifest_path)
     created = _missing_dirs(outdir)
     os.makedirs(outdir, exist_ok=True)
     stage = None
@@ -167,7 +188,7 @@ def extract_blobs(dump, manifest_path, outdir):
                 raise ChecksumMismatch("%s: expected sha256 %s, got %s"
                                        % (entry.dest, entry.sha256, actual))
             staged.append((path, entry.dest))
-        _install(staged, outdir)
+        _install(staged, outdir, dump, manifest_path)
     except BaseException:
         if stage is not None:
             shutil.rmtree(stage, ignore_errors=True)

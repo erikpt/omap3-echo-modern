@@ -267,6 +267,45 @@ class ExtractTests(unittest.TestCase):
             os.chdir(old)
         self.assertEqual(_read(result[0]), b"FIRMWARE")
 
+    def _clash(self, dump_name, manifest_name, dest):
+        """Dump and manifest live in the output directory under the given names."""
+        dump = os.path.join(self.outdir, dump_name)
+        shutil.copyfile(self.info.path, dump)
+        os.chmod(dump, 0o640)
+        manifest = os.path.join(self.outdir, manifest_name)
+        with open(manifest, "w", encoding="utf-8") as f:
+            f.write("1\t%s\t%s\t%s\n" % (FW, FW_SHA, dest))
+        return dump, manifest, _read(dump), _read(manifest)
+
+    def test_dest_equal_to_the_dump_is_refused_and_dump_untouched(self):
+        dump, manifest, dump_bytes, _m = self._clash("x.bin", "m.manifest", "x.bin")
+        mode = os.stat(dump).st_mode
+        with self.assertRaises(DumpError) as cm:
+            blobs.extract_blobs(dump, manifest, self.outdir)
+        self.assertEqual(cm.exception.exit_code, 1)
+        self.assertIn("x.bin", str(cm.exception))
+        self.assertIn("dump", str(cm.exception))
+        self.assertEqual(_read(dump), dump_bytes)
+        self.assertEqual(os.stat(dump).st_mode, mode)
+        self.assertEqual(sorted(os.listdir(self.outdir)), ["m.manifest", "x.bin"])
+
+    def test_dest_equal_to_the_manifest_is_refused_and_manifest_untouched(self):
+        dump, manifest, _d, manifest_bytes = self._clash("d.img", "blobs.manifest",
+                                                         "blobs.manifest")
+        with self.assertRaises(DumpError) as cm:
+            blobs.extract_blobs(dump, manifest, self.outdir)
+        self.assertEqual(cm.exception.exit_code, 1)
+        self.assertIn("manifest", str(cm.exception))
+        self.assertEqual(_read(manifest), manifest_bytes)
+
+    def test_dest_that_is_a_symlink_to_the_dump_is_refused(self):
+        dump, manifest, dump_bytes, _m = self._clash("d.img", "m.manifest", "link.bin")
+        os.symlink(dump, os.path.join(self.outdir, "link.bin"))
+        with self.assertRaises(DumpError):
+            blobs.extract_blobs(dump, manifest, self.outdir)
+        self.assertEqual(_read(dump), dump_bytes)
+        self.assertTrue(os.path.islink(os.path.join(self.outdir, "link.bin")))
+
     def test_missing_debugfs_is_a_clear_error_and_leaves_outdir_empty(self):
         self.write_manifest((1, FW, FW_SHA, "fw.bin"))
         with tempfile.TemporaryDirectory() as empty, \

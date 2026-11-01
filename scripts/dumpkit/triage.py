@@ -8,9 +8,10 @@ file-aware, so a secret value placed directly after a searched key (for example
 root=<secret>) would still be printed. That residual risk is accepted."""
 import hashlib
 import os
+import tempfile
 
 from . import _debugfs
-from .errors import NoPartitionTable
+from .errors import DumpError, NoPartitionTable
 from .ptable import read_partitions
 
 PATTERNS = (
@@ -170,6 +171,9 @@ def _partition_lines(parts):
 
 def triage(dump, outdir):
     """Write `outdir/triage.md` for the dump at `dump` and return its path."""
+    report = os.path.join(outdir, "triage.md")
+    if os.path.exists(report) and os.path.samefile(report, dump):
+        raise DumpError("%s is the dump itself; refusing to overwrite it" % report)
     _debugfs.image_arg(dump, 0)  # refuse a dump path debugfs would misread, before any work
     try:
         parts = read_partitions(dump)
@@ -236,7 +240,17 @@ def triage(dump, outdir):
             out.append("No secret-like file names found in readable ext4 partitions.")
 
     os.makedirs(outdir, exist_ok=True)
-    report = os.path.join(outdir, "triage.md")
-    with open(report, "w", encoding="utf-8") as f:
-        f.write(_safe("\n".join(out)) + "\n")
+    # Write beside the target and rename into place: the report appears whole or not at
+    # all, and an existing file (never the dump, checked above) is not truncated in place.
+    fd, tmp = tempfile.mkstemp(dir=outdir, prefix=".triage-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(_safe("\n".join(out)) + "\n")
+        os.replace(tmp, report)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return report

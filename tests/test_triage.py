@@ -224,6 +224,45 @@ class TriageSecretScanTests(unittest.TestCase):
             self.assertIn("install e2fsprogs", err.getvalue())
         self.assertFalse(os.path.exists(os.path.join(self.out, "triage.md")))
 
+    def test_dump_named_triage_md_in_outdir_is_refused_and_untouched(self):
+        dump = os.path.join(self.dir, "triage.md")
+        with open(self.info.path, "rb") as src, open(dump, "wb") as dst:
+            dst.write(src.read())
+        os.chmod(dump, 0o640)
+        before = sha256_of(dump)
+        mode = os.stat(dump).st_mode
+        with self.assertRaises(DumpError) as cm:
+            triage.triage(dump, self.dir)
+        self.assertEqual(cm.exception.exit_code, 1)
+        self.assertIn("triage.md", str(cm.exception))
+        self.assertEqual(sha256_of(dump), before)
+        self.assertEqual(os.stat(dump).st_mode, mode)
+
+    def test_report_replaces_an_existing_report_atomically(self):
+        self.report()
+        os.chmod(os.path.join(self.out, "triage.md"), 0o600)
+        first = self.report()
+        self.assertEqual(first, self.report())
+        self.assertEqual(os.listdir(self.out), ["triage.md"])
+
+    def test_failed_report_write_leaves_no_partial_file_and_no_temp_file(self):
+        with mock.patch.object(triage.os, "replace", side_effect=OSError("injected")):
+            with self.assertRaises(OSError):
+                triage.triage(self.info.path, self.out)
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_failed_report_write_keeps_the_previous_report(self):
+        self.report()
+        path = os.path.join(self.out, "triage.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("PREVIOUS\n")
+        with mock.patch.object(triage.os, "replace", side_effect=OSError("injected")):
+            with self.assertRaises(OSError):
+                triage.triage(self.info.path, self.out)
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "PREVIOUS\n")
+        self.assertEqual(os.listdir(self.out), ["triage.md"])
+
     def test_dump_path_with_question_mark_is_refused(self):
         odd = os.path.join(self.dir, "we?ird.img")
         with open(self.info.path, "rb") as src, open(odd, "wb") as dst:

@@ -26,7 +26,10 @@ must let either option slot in.
 
 | Item | Value | Status |
 |---|---|---|
-| SoC | TI DM3725, Cortex-A8 | Verified (DTS, teardown) |
+| SoC | TI DM3725CUS100 (non-PoP package), Cortex-A8, lot 65ZE9J9 | Verified (DTS, teardown, board photo) |
+| Board | PCB 30-000731 REV 06, PCBA 31-000832 | Verified (board photo) |
+| Test points near SoC | TP120, TP121, TP126, TP127 along the SoC's bottom edge; function unknown, possible UART candidates | Photo only; **unverified** |
+| Unidentified parts | U17 (5-pin, marked `LCRB`), Y2 crystal (marked `D196J`) | Not identified |
 | RAM | Micron MT46H64M32LFBQ-48 WT:C, 2 Gbit (256 MB) x32 LPDDR1, 90-ball | Verified (marking `D9RWH` decoded with Micron FBGA decoder) |
 | RAM exposed by DTS | 198 MB (`0xc600000`) | Verified (DTS); the ~58 MB gap is believed to be a software carve-out, **unverified** |
 | Storage | SanDisk iNAND SDIN7DP2-4G, 4 GB eMMC (U16) | Verified (photo, teardown) |
@@ -156,7 +159,8 @@ passes on the device.
 ## 9. Open questions
 
 - What is the boot chain (ROM, first-stage, bootloader) and is any stage unsigned?
-- Where is the UART?
+- Where is the UART? Candidates: TP120/121/126/127. Resolve by tracing each to its SoC ball
+  and by reading the console port from Amazon's kernel command line in the dump.
 - What reserves the ~58 MB?
 - Which bus, address and port do the ADC3101s use?
 - Stretch: could the RAM be upgraded? Needs a larger pin-compatible part, routed extra

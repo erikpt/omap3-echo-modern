@@ -14,7 +14,7 @@
 
 - No Amazon-derived file in git. `dump/`, `blobs/`, `*.bin`, `*.img`, `output/`, `dl/` stay git-ignored (`.gitignore` already does this).
 - Tools never modify the dump: it is opened read-only, and outputs go elsewhere.
-- Tools never print the contents of secret-like files. Secret-like means a filename containing `secret`, `token`, `passwd`, `shadow`, `wpa_supplicant`, `.pem`, `.key` (case-insensitive).
+- Tools never print the contents of secret-like files. Secret-like means a filename containing `secret`, `token`, `passwd`, `password`, `shadow`, `wpa_supplicant`, `private`, `credential`, `_key`, `id_rsa`, `id_ecdsa`, `id_ed25519`, `.pem`, `.key`, `.p12`, `.pfx`, `.keystore` (case-insensitive substring; no bare `key`, so `keymap.map` is not flagged).
 - Triage output is capped: no list longer than 40 lines.
 - Exit codes: 0 ok, 2 range error, 3 no partition table, 4 checksum mismatch, 5 output exists, 1 any other error.
 - Buildroot is a git submodule at an LTS tag, never forked or patched. Kernel is a mainline LTS taken from that Buildroot release.
@@ -154,7 +154,7 @@ external/ ...               # Task 6
 - [ ] **Step 3: Run** `python3 -m unittest tests.test_skeleton -v`. Expected: FAIL.
 - [ ] **Step 4: Implement** the external tree and defconfig. The fragment starts with only the options needed for squashfs, overlayfs, ath6kl, the TLV320 codecs as modules, and zram. Add the submodule at the chosen tag (`git submodule add` then `git -C buildroot checkout <tag>`).
 - [ ] **Step 5: Run** the unit test again. Expected: PASS.
-- [ ] **Step 6: Verify the build.** Run `make -C buildroot BR2_EXTERNAL=$PWD/external O=$PWD/output echo_gen1_defconfig`, then `make -C buildroot O=$PWD/output linux-dtbs` (long: downloads a toolchain and the kernel). Then `scripts/check-dtb.sh output`. Expected: exit 0. This step cannot run in the cloud container without network and time; if it cannot be run, say so and leave this step unchecked.
+- [ ] **Step 6: Verify the build.** Run `make -C buildroot BR2_EXTERNAL=$PWD/external O=$PWD/output echo_gen1_defconfig`, then `make -C buildroot O=$PWD/output host-dtc linux-configure` and the kernel's own rule for `ti/omap/omap3-echo.dtb` (Buildroot 2026.02.3 has no `linux-dtbs` target; the exact sequence is in `external/board/amazon/echo-gen1/README.md` and the `dtb` CI job; long: downloads a toolchain and the kernel, about 25 minutes and 8 GB for the DTB alone). Then `scripts/check-dtb.sh output`. Expected: exit 0. This step was run once for real during execution. If it cannot be run, say so and leave this step unchecked.
 - [ ] **Step 7: Commit** `git commit -m "feat: Buildroot external tree, pinned submodule and board DTB check"`
 
 ---

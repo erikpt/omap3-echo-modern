@@ -158,9 +158,12 @@ committed is a user decision; **ask before committing it**.
 - Check for per-device calibration or MAC address storage (a partition or file). Record where
   it is; **do not extract or print MAC addresses or calibration of this specific unit into git.**
 - Write `scripts/extract-blobs.sh`: reads the user's dump, copies exactly the required files
-  into `blobs/` (git-ignored), and verifies each against SHA-256 values committed in
-  `scripts/blobs.sha256`. It must fail clearly if the dump or a file is missing.
-  The script and checksums are committed; the blobs are not.
+  into `blobs/` (git-ignored), and verifies each against the SHA-256 recorded in
+  `scripts/blobs.manifest`. The manifest has one entry per line with four tab-separated
+  fields: partition index, path inside the filesystem, lowercase hex SHA-256, destination
+  file name (no directories). `scripts/extract-blobs.sh` (added in a later task) reads it.
+  It must fail clearly if the dump or a file is missing. The script and the manifest are
+  committed; the blobs are not.
 
 ### 3.7 Rootfs and userspace survey (`07-userspace.md`)
 

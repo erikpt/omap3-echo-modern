@@ -14,7 +14,7 @@
 
 - No Amazon-derived file in git. `dump/`, `blobs/`, `*.bin`, `*.img`, `output/`, `dl/` stay git-ignored (`.gitignore` already does this).
 - Tools never modify the dump: it is opened read-only, and outputs go elsewhere.
-- Tools never print the contents of secret-like files. Secret-like means a filename containing `secret`, `token`, `passwd`, `shadow`, `wpa_supplicant`, `.pem`, `.key` (case-insensitive).
+- Tools never print the contents of secret-like files. Secret-like means a filename containing `secret`, `token`, `passwd`, `password`, `shadow`, `wpa_supplicant`, `private`, `credential`, `_key`, `id_rsa`, `id_ecdsa`, `id_ed25519`, `.pem`, `.key`, `.p12`, `.pfx`, `.keystore` (case-insensitive substring; no bare `key`, so `keymap.map` is not flagged).
 - Triage output is capped: no list longer than 40 lines.
 - Exit codes: 0 ok, 2 range error, 3 no partition table, 4 checksum mismatch, 5 output exists, 1 any other error.
 - Buildroot is a git submodule at an LTS tag, never forked or patched. Kernel is a mainline LTS taken from that Buildroot release.

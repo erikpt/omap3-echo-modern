@@ -344,6 +344,30 @@ class TriageSecretScanTests(unittest.TestCase):
         self.assertIn("omitted", text)
         self.assertIn("scan incomplete: 1 director", text)
 
+    def test_widened_word_list_names_are_listed_and_keymaps_are_not(self):
+        listed = ["password.txt", "ssh_host_rsa_key", "id_ed25519", "server.p12", "id_rsa",
+                  "id_ecdsa", "my.pfx", "store.keystore", "private.dat", "aws_credentials",
+                  "PASSWORD.TXT", "Wifi_Credential"]
+        ignored = ["keymap.map", "keyboard.conf", "monkey.txt", "keys.txt"]
+        files = {"/d/" + n: b"s" for n in listed + ignored}
+        set_partition1_files(self.info, files)
+        text = self.secret_section(self.report())
+        for name in listed:
+            with self.subTest(listed=name):
+                self.assertIn("/d/" + name, text)
+        for name in ignored:
+            with self.subTest(ignored=name):
+                self.assertNotIn(name, text)
+
+    def test_secret_word_matching_is_case_insensitive_substring(self):
+        for name in ("a_key", "X.PEM", "my.KEY", "Shadow-", "tOkEn", "wpa_supplicant.conf",
+                     "passwd", "SECRET", "Id_Rsa.pub", "cert.P12", "k.PFX", "a.KeyStore"):
+            with self.subTest(name=name):
+                self.assertTrue(triage._is_secret_like(name))
+        for name in ("key", "keymap.map", "keyboard.conf", "monkey", "hotkeys", "turkey.txt"):
+            with self.subTest(name=name):
+                self.assertFalse(triage._is_secret_like(name))
+
     def test_names_with_line_break_characters_are_found(self):
         files = {"/a\x1cb_secret": b"x", "/c\x0bd_secret": b"x",
                  "/e\u2028f_secret": b"x", "/g\nh_secret": b"x"}

@@ -21,7 +21,10 @@ PATTERNS = (
     b"\x27\x05\x19\x56",  # U-Boot legacy image magic
 )
 _CMDLINE_PATTERNS = (b"console=", b"mem=", b"root=")
-_SECRET_WORDS = ("secret", "token", "passwd", "shadow", "wpa_supplicant", ".pem", ".key")
+# Case-insensitive substrings. No bare "key": it would flag keymap.map and keyboard.conf.
+_SECRET_WORDS = ("secret", "token", "passwd", "password", "shadow", "wpa_supplicant",
+                 "private", "credential", "_key", "id_rsa", "id_ecdsa", "id_ed25519",
+                 ".pem", ".key", ".p12", ".pfx", ".keystore")
 
 _CHUNK = 1024 * 1024
 _MAX_LINES = 40

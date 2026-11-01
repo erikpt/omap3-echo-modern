@@ -6,3 +6,5 @@
 output/
 dl/
 __pycache__/
+*.dtb
+*.fw

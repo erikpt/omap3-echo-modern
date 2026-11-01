@@ -1,0 +1,22 @@
+# Kernel options layered on top of the omap2plus defconfig.
+# Only what the image design needs: squashfs root, overlayfs, the ath6kl
+# Wi-Fi stack, the TLV320 codecs and zram.
+
+# Read-only compressed root and writable overlay
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_OVERLAY_FS=y
+
+# Wi-Fi: ath6kl over SDIO, loaded as modules (needs cfg80211)
+CONFIG_CFG80211=m
+CONFIG_WLAN=y
+CONFIG_WLAN_VENDOR_ATH=y
+CONFIG_ATH6KL=m
+CONFIG_ATH6KL_SDIO=m
+
+# Audio codecs (modules)
+CONFIG_SND_SOC_TLV320AIC32X4_I2C=m
+CONFIG_SND_SOC_TLV320ADC3XXX=m
+
+# Compressed swap in RAM
+CONFIG_ZRAM=m

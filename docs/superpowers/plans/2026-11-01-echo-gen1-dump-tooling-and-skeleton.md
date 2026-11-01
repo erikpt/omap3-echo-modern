@@ -154,7 +154,7 @@ external/ ...               # Task 6
 - [ ] **Step 3: Run** `python3 -m unittest tests.test_skeleton -v`. Expected: FAIL.
 - [ ] **Step 4: Implement** the external tree and defconfig. The fragment starts with only the options needed for squashfs, overlayfs, ath6kl, the TLV320 codecs as modules, and zram. Add the submodule at the chosen tag (`git submodule add` then `git -C buildroot checkout <tag>`).
 - [ ] **Step 5: Run** the unit test again. Expected: PASS.
-- [ ] **Step 6: Verify the build.** Run `make -C buildroot BR2_EXTERNAL=$PWD/external O=$PWD/output echo_gen1_defconfig`, then `make -C buildroot O=$PWD/output linux-dtbs` (long: downloads a toolchain and the kernel). Then `scripts/check-dtb.sh output`. Expected: exit 0. This step cannot run in the cloud container without network and time; if it cannot be run, say so and leave this step unchecked.
+- [ ] **Step 6: Verify the build.** Run `make -C buildroot BR2_EXTERNAL=$PWD/external O=$PWD/output echo_gen1_defconfig`, then `make -C buildroot O=$PWD/output host-dtc linux-configure` and the kernel's own rule for `ti/omap/omap3-echo.dtb` (Buildroot 2026.02.3 has no `linux-dtbs` target; the exact sequence is in `external/board/amazon/echo-gen1/README.md` and the `dtb` CI job; long: downloads a toolchain and the kernel, about 25 minutes and 8 GB for the DTB alone). Then `scripts/check-dtb.sh output`. Expected: exit 0. This step was run once for real during execution. If it cannot be run, say so and leave this step unchecked.
 - [ ] **Step 7: Commit** `git commit -m "feat: Buildroot external tree, pinned submodule and board DTB check"`
 
 ---

@@ -5,3 +5,4 @@
 *.img
 output/
 dl/
+__pycache__/

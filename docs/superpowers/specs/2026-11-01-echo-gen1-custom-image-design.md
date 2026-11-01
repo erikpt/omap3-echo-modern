@@ -38,7 +38,7 @@ must let either option slot in.
 | Capture path | Four TLV320ADC3101 stereo ADCs, seven microphones on the top board | From teardown; bus, address and audio wiring **unknown** |
 | LEDs | Four LP5523-class drivers on I2C2 | Verified (DTS) |
 | Inputs | Mute and help buttons, rotary encoder | Verified (DTS) |
-| Wi-Fi | Atheros ath6kl, QCA6234 module on SDIO (mmc3) | Verified (DTS, teardown) |
+| Wi-Fi | Qualcomm Atheros QCA6234X-AM2D module (U6, date code 1638) on SDIO (mmc3), DTS node `atheros,ath6kl` | Chip verified (DTS, teardown, photo); required firmware set and driver fit **unverified** until the dump shows Amazon's firmware files |
 | Boot chain | Unknown. No documented UART pinout found. No U-Boot port found. | **Unknown** |
 
 Mainline Linux has carried `omap3-echo.dts` since 5.6. Mic and speaker audio were not

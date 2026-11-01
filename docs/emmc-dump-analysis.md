@@ -21,8 +21,10 @@ the artifacts the build needs. Read that spec first, especially sections 3, 5, 8
    `strings` a whole image or large file into the conversation. Cap output (e.g. `| head -40`).
 5. **Mark every fact** in notes as `verified` (seen directly in the dump, with the command or
    path that showed it) or `inferred`. Do not blur them.
-6. Work on branch `claude/gen1-alexa-custom-image-6hgv1q`. Commit findings (text only) in
-   small commits. Do not push to other branches.
+6. Work on branch `stock-fw-analysis` (reverse engineering of the stock firmware happens
+   there). Commit findings (text only) in small commits. Do not push to other branches. The
+   dump tools (`scripts/`, once built) live on `firmware-develop`; merge that branch into
+   `stock-fw-analysis` to use them, and do not commit tool changes from here.
 
 ## 1. Inputs to establish first
 
@@ -214,6 +216,8 @@ Stop and ask the user, with a one-paragraph summary, if you find:
 
 ## 7. Handing back
 
-Commit text findings (`docs/findings/`, `docs/hardware.md`, scripts) to the branch and push.
+Commit text findings (`docs/findings/`, `docs/hardware.md`) to `stock-fw-analysis` and push.
 Tell the user the commit hash and paste the "Spec changes needed" list in your reply. The
-cloud session will read the findings from the branch to update the spec and write the plan.
+cloud session will read the findings from that branch to update the spec and write the plan.
+Once the user has reviewed the findings, the conclusions (the `docs/hardware.md` updates and
+accepted spec changes) are promoted to `main`; raw findings stay on `stock-fw-analysis`.

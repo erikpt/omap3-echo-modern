@@ -19,11 +19,13 @@ player. Wake-word placement is undecided until microphone bring-up works.
 - Never print or commit secrets from the dump (Wi-Fi credentials, tokens, serials, keys,
   MAC addresses, calibration).
 - Never modify the original dump. Never flash a device without the user's explicit go-ahead.
-- Branches: `main` is docs only. `firmware-develop` is where firmware and tooling code is
-  built (branch off it, merge back). `firmware-release` is for releases, created only when
-  the user says it's time. Do not commit code to `main`.
-- Dump analysis findings are docs: commit them to `main`. The dump tools in `scripts/` live
-  on `firmware-develop`; check that branch out (or merge it) to use them.
+- Branches: `main` is docs only (reviewed conclusions). `firmware-develop` is where firmware
+  and tooling code is built (branch off it, merge back). `stock-fw-analysis` is where the
+  reverse engineering of the stock firmware and its raw findings (`docs/findings/`) go.
+  `firmware-release` is for releases, created only when the user says it's time. Do not
+  commit code to `main`.
+- The dump tools in `scripts/` live on `firmware-develop`; merge that branch into
+  `stock-fw-analysis` to use them. Do not commit tool changes from the analysis branch.
 - Save tokens: summarise large outputs, cap with `head`, never dump whole images or strings.
 - Without the device, only the DTS compile and image build can be verified. Do not claim
   boot, Wi-Fi, audio or mic behaviour works until it has been seen on hardware.

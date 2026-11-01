@@ -1,0 +1,7 @@
+# Private or proprietary material. Never commit.
+/dump/
+/blobs/
+*.bin
+*.img
+output/
+dl/
